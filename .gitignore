@@ -1,6 +1,5 @@
 .venv/
 *.csv
-*.png
 *.pdf
 *.html
 *.json
