@@ -1,0 +1,11 @@
+.venv/
+*.csv
+*.png
+*.pdf
+*.html
+*.json
+*.yaml
+*.yml
+*.jsonl
+*.jsonl.gz
+*.jsonl.bz2
