@@ -3,6 +3,7 @@
 ![Pandas](https://img.shields.io/badge/Pandas-2.3.2-150458?logo=pandas&logoColor=white)
 ![NumPy](https://img.shields.io/badge/NumPy-2.3.2-013243?logo=numpy&logoColor=white)
 ![Matplotlib](https://img.shields.io/badge/Matplotlib-3.10.5-11557C?logo=matplotlib&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?logo=streamlit&logoColor=white)
 ![Microsoft Excel](https://img.shields.io/badge/Microsoft%20Excel-Data%20Source-217346?logo=microsoft-excel&logoColor=white)
 ![CSV](https://img.shields.io/badge/CSV-Datasets-FFB703)
 
@@ -133,6 +134,13 @@ streamlit run streamlit_app.py
 - Export charts from the Streamlit UI (built‑in menu)
 
 Note: Expected CSV columns include `Hour` (e.g., `13:30`), `Dur.` (minutes), `Enr Count`, and `Subj`.
+
+### Why Streamlit helps analyze this data better
+- Interactive exploration: Hover tooltips reveal exact times, subjects, and totals without re-running scripts.
+- Rapid iteration: Upload new weekday CSVs on the fly to compare snapshots or scenarios.
+- Focused views: Filter by specific weekdays to drill into patterns quickly.
+- Clear context: Stacked bars at class end times show both subject composition and total students released at a glance.
+- Shareable: Launch locally or deploy to a remote workspace so stakeholders can self-serve insights.
 
 ### Sample output figures
 
