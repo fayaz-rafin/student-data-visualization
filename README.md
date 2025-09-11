@@ -116,6 +116,9 @@ If your CSVs are in another folder, update the `csv_files` mapping at the top of
 
 Run an interactive dashboard for uploading weekday CSVs or using the included samples, with charts for both analyses.
 
+### Live app
+[Open the Streamlit app](https://fayaz-rafin-student-data-visualization-streamlit-app-upgzzd.streamlit.app/)
+
 ### Install deps
 ```bash
 pip install -r requirements.txt

@@ -19,10 +19,15 @@ WEEKDAY_TO_FILE = {
 }
 
 
-def read_csv_safely(file_like_or_path: Path | str) -> pd.DataFrame:
-    if isinstance(file_like_or_path, (str, Path)):
+def read_csv_safely(file_like_or_path: Path | str) -> pd.DataFrame | None:
+    try:
+        if isinstance(file_like_or_path, (str, Path)):
+            return pd.read_csv(file_like_or_path)
         return pd.read_csv(file_like_or_path)
-    return pd.read_csv(file_like_or_path)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
+    except Exception:
+        return None
 
 
 def format_hour_label(hour: int) -> str:
@@ -47,6 +52,8 @@ def format_end_time_label(decimal_hour: float) -> str:
 
 
 def compute_hourly_in_class_means(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty or 'Hour' not in df.columns or 'Enr Count' not in df.columns:
+        return pd.DataFrame(columns=['Hour', 'Enr Count'])
     df = df.copy()
     df['Hour'] = pd.to_datetime(df['Hour'], format='%H:%M').dt.hour
     hourly = df.sort_values('Hour').groupby('Hour')['Enr Count'].mean().reset_index()
@@ -54,6 +61,9 @@ def compute_hourly_in_class_means(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_endtime_subject_pivot(df: pd.DataFrame) -> pd.DataFrame:
+    required = {'Hour', 'Dur.', 'Enr Count', 'Subj'}
+    if df is None or df.empty or not required.issubset(df.columns):
+        return pd.DataFrame()
     df = df.copy()
     df['Hour'] = pd.to_datetime(df['Hour'], format='%H:%M').dt.hour
     df['Duration'] = df['Dur.'].astype(float) / 60.0
@@ -140,11 +150,19 @@ def load_day_dataframe(day_name: str) -> pd.DataFrame | None:
         csv_path = Path(WEEKDAY_TO_FILE[day_name])
         if not csv_path.exists():
             return None
-        return read_csv_safely(csv_path)
+        df = read_csv_safely(csv_path)
+        if df is None or df.empty:
+            return None
+        required = {'Hour', 'Dur.', 'Enr Count', 'Subj'}
+        return df if required.issubset(df.columns) else None
     file_like = uploaded.get(day_name)
     if file_like is None:
         return None
-    return read_csv_safely(file_like)
+    df = read_csv_safely(file_like)
+    if df is None or df.empty:
+        return None
+    required = {'Hour', 'Dur.', 'Enr Count', 'Subj'}
+    return df if required.issubset(df.columns) else None
 
 
 st.subheader("1) Students In Class by Hour (mean)")
