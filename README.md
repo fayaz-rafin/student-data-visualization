@@ -16,7 +16,7 @@ Determine the best times to host on‑campus events based on when the fewest stu
 - Open the weekly timetable spreadsheets in Excel
 - Keep the columns needed for analysis: `Day`, `Hour` (start), `Dur.` (minutes), `Enr Count`, `Subj`
 - Ensure `Hour` uses 24‑hour format (e.g., `13:30`) and `Dur.` is numeric minutes
-- Export each weekday to CSV → `20250818 Calendar Snapshot(<DAY> FY).csv`
+- Export each weekday to CSV
 - The Python scripts load these CSVs and perform the transformations and visualizations reproducibly
 
 ### Why this is relevant for Data Analyst roles
@@ -29,7 +29,7 @@ Determine the best times to host on‑campus events based on when the fewest stu
 - `main.py`: Creates day-by-day bar charts of average students in class by hour and prints peak/low activity windows
 - `total_students_available.py`: Builds stacked and grouped bar charts of students available at class end times by subject; prints detailed per-time and per-subject breakdowns
 - `requirements.txt`: Python package dependencies
-- `20250818 Calendar Snapshot(<DAY> FY).csv`: Source timetable snapshots for Monday–Friday
+- `.csv files`: Source timetable snapshots for Monday–Friday
 - Output images (generated when you run the scripts):
   - `weekly_enrollment_analysis.png`
   - `total_students_available.png`
@@ -110,6 +110,29 @@ Outputs:
 - Console: per‑time totals by subject, day totals, and subject breakdowns
 
 If your CSVs are in another folder, update the `csv_files` mapping at the top of each script.
+
+## Streamlit app (interactive)
+
+Run an interactive dashboard for uploading weekday CSVs or using the included samples, with charts for both analyses.
+
+### Install deps
+```bash
+pip install -r requirements.txt
+```
+
+### Launch the app
+```bash
+streamlit run streamlit_app.py
+```
+
+### Features
+- Upload Monday–Friday CSVs or toggle to use repository samples
+- View mean students in class by hour for each day
+- View students available at class end times by subject (stacked bars)
+- Pick which weekdays to display
+- Export charts from the Streamlit UI (built‑in menu)
+
+Note: Expected CSV columns include `Hour` (e.g., `13:30`), `Dur.` (minutes), `Enr Count`, and `Subj`.
 
 ### Sample output figures
 

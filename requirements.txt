@@ -2,3 +2,5 @@ pandas
 numpy
 matplotlib
 python-dateutil
+streamlit
+altair
