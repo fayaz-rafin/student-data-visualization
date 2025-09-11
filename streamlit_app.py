@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import altair as alt
+import re
 from pathlib import Path
 
 
@@ -28,6 +29,43 @@ def read_csv_safely(file_like_or_path: Path | str) -> pd.DataFrame | None:
         return pd.DataFrame()
     except Exception:
         return None
+
+
+def _sanitize_column_name(name: str) -> str:
+    if not isinstance(name, str):
+        name = str(name)
+    return re.sub(r"[^a-z0-9]", "", name.strip().lower())
+
+
+def harmonize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Return df with standardized columns and the applied mapping.
+    Canonical columns: 'Hour', 'Dur.', 'Enr Count', 'Subj'
+    """
+    if df is None or df.empty:
+        return df, {}
+    canonical_targets = {
+        'Hour': {
+            'hour', 'start', 'starttime', 'time', 'start_time', 'starthour', 'starttime24h', 'start24h'
+        },
+        'Dur.': {
+            'dur', 'duration', 'minutes', 'mins', 'min', 'length', 'durationmin', 'durmin'
+        },
+        'Enr Count': {
+            'enrcount', 'enrollment', 'enrolment', 'enrolled', 'enrollmentcount', 'students', 'count', 'enr'
+        },
+        'Subj': {
+            'subj', 'subject', 'course', 'dept', 'subjectcode', 'major'
+        }
+    }
+    sanitized_to_original = { _sanitize_column_name(c): c for c in df.columns }
+    rename_map: dict = {}
+    for canon, synonyms in canonical_targets.items():
+        for s, original in sanitized_to_original.items():
+            if s in synonyms:
+                rename_map[original] = canon
+                break
+    df_renamed = df.rename(columns=rename_map)
+    return df_renamed, rename_map
 
 
 def format_hour_label(hour: int) -> str:
@@ -141,6 +179,7 @@ with st.sidebar:
     st.divider()
     st.header("Display Options")
     selected_days = st.multiselect("Select days", list(WEEKDAY_TO_FILE.keys()), default=list(WEEKDAY_TO_FILE.keys()))
+    show_debug = st.toggle("Show debug info", value=False)
 
 
 def load_day_dataframe(day_name: str) -> pd.DataFrame | None:
@@ -152,17 +191,35 @@ def load_day_dataframe(day_name: str) -> pd.DataFrame | None:
             return None
         df = read_csv_safely(csv_path)
         if df is None or df.empty:
+            st.info(f"No rows in sample CSV for {day_name}.")
             return None
+        df, mapping = harmonize_columns(df)
+        if show_debug and mapping:
+            st.caption(f"Column mapping: {mapping}")
         required = {'Hour', 'Dur.', 'Enr Count', 'Subj'}
-        return df if required.issubset(df.columns) else None
+        if not required.issubset(df.columns):
+            if show_debug:
+                st.warning(f"{day_name}: Missing required columns. Found: {list(df.columns)}")
+            return None
+        return df
     file_like = uploaded.get(day_name)
     if file_like is None:
         return None
     df = read_csv_safely(file_like)
     if df is None or df.empty:
+        st.info(f"Uploaded CSV for {day_name} is empty.")
         return None
+    df, mapping = harmonize_columns(df)
+    if show_debug and mapping:
+        st.caption(f"Column mapping: {mapping}")
     required = {'Hour', 'Dur.', 'Enr Count', 'Subj'}
-    return df if required.issubset(df.columns) else None
+    if not required.issubset(df.columns):
+        missing = required.difference(df.columns)
+        st.warning(f"{day_name}: Missing columns {sorted(list(missing))}. Found: {list(df.columns)}")
+        if show_debug:
+            st.dataframe(df.head())
+        return None
+    return df
 
 
 st.subheader("1) Students In Class by Hour (mean)")
