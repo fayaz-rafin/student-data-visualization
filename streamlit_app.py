@@ -235,6 +235,7 @@ with st.sidebar:
     st.divider()
     st.header("Display Options")
     selected_days = st.multiselect("Select days", list(WEEKDAY_TO_FILE.keys()), default=list(WEEKDAY_TO_FILE.keys()))
+    max_courses = st.slider("Max courses in course chart", min_value=10, max_value=100, value=30, step=5, help="Top courses by total students; others aggregated to 'Other'")
     show_debug = st.toggle("Show debug info", value=False)
 
 
@@ -333,6 +334,11 @@ for row_idx, day_group in enumerate(day_chunks):
             long_df['End Time'] = long_df['End Hour Rounded'].apply(format_end_time_label)
             totals = long_df.groupby('End Time', as_index=False)['Students'].sum().rename(columns={'Students':'Total Students'})
             long_df = long_df.merge(totals, on='End Time', how='left')
+            # Limit number of courses to top N by total students; aggregate rest into 'Other'
+            course_totals = long_df.groupby('Course', as_index=False)['Students'].sum().sort_values('Students', ascending=False)
+            keep_courses = set(course_totals['Course'].head(max_courses))
+            long_df['Course'] = long_df['Course'].where(long_df['Course'].isin(keep_courses), other='Other')
+            long_df = long_df.groupby(['End Hour Rounded', 'End Time', 'Course'], as_index=False).agg({'Students':'sum', 'Total Students':'first'})
             long_df = long_df.sort_values('End Hour Rounded')
             long_df['time_sort'] = long_df['End Hour Rounded']
             # Build an explicit ordered domain of labels from the sorted unique rounded times
