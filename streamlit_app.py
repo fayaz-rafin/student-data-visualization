@@ -7,6 +7,9 @@ import re
 from pathlib import Path
 
 
+# Allow large datasets in Altair (fixes charts not rendering online due to row limits)
+alt.data_transformers.disable_max_rows()
+
 # -----------------------------
 # Utility and analysis functions
 # -----------------------------
