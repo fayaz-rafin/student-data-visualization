@@ -27,10 +27,13 @@ for day_idx, (day_name, csv_file) in enumerate(csv_files.items()):
     curves_csv = Path(csv_file)
     curves_df = pd.read_csv(curves_csv)
     
+    # Filter for 2000-level courses only
+    curves_df = curves_df[curves_df['Crs Num'].astype(str).str.startswith('2')]
+    
     # Process data for event planning analysis
     curves_df['Hour'] = pd.to_datetime(curves_df['Hour'], format='%H:%M').dt.hour
     curves_df_sorted = curves_df.sort_values('Hour')
-    hourly_enrollment = curves_df_sorted.groupby('Hour')['Enr Count'].mean().reset_index()
+    hourly_enrollment = curves_df_sorted.groupby('Hour')['Enr Count'].sum().reset_index()
     
     # Filter out zero enrollment hours for bars
     hourly_enrollment = hourly_enrollment[hourly_enrollment['Enr Count'] > 0]
@@ -46,9 +49,9 @@ for day_idx, (day_name, csv_file) in enumerate(csv_files.items()):
                 f'{height:.0f}', ha='center', va='bottom', fontweight='bold', fontsize=10)
     
     # Set chart properties
-    ax.set_title(f"{day_name} - Student Availability", fontsize=14, fontweight='bold')
+    ax.set_title(f"{day_name} - Total 2000-Level Students in Class", fontsize=14, fontweight='bold')
     ax.set_xlabel("Time of Day", fontsize=12)
-    ax.set_ylabel("Students Available", fontsize=12)
+    ax.set_ylabel("Total Students in 2000-Level Courses", fontsize=12)
     
     # Set x-axis ticks for complete time range (8 AM to 8 PM)
     complete_hours = list(range(8, 21))  # 8 AM to 8 PM
@@ -70,19 +73,19 @@ for day_idx, (day_name, csv_file) in enumerate(csv_files.items()):
 axes[5].remove()
 
 # Add overall title
-fig.suptitle("Weekly Campus Student Availability Analysis", 
+fig.suptitle("Weekly Total 2000-Level Students in Class Analysis", 
              fontsize=18, fontweight='bold', y=0.98)
 
 plt.tight_layout()
 
-out_bar = Path("weekly_enrollment_analysis.png")
+out_bar = Path("weekly_2000level_availability.png")
 plt.savefig(out_bar, dpi=150, bbox_inches='tight')
 plt.close()
 
 # Print comprehensive weekly analysis
-print("Weekly analysis saved as:", out_bar)
+print("Total 2000-level students in class analysis saved as:", out_bar)
 print("\n" + "="*80)
-print("WEEKLY CAMPUS STUDENT AVAILABILITY ANALYSIS")
+print("WEEKLY TOTAL 2000-LEVEL STUDENTS IN CLASS ANALYSIS")
 print("="*80)
 
 for day_name, csv_file in csv_files.items():
@@ -93,13 +96,20 @@ for day_name, csv_file in csv_files.items():
     curves_csv = Path(csv_file)
     curves_df = pd.read_csv(curves_csv)
     
+    # Filter for 2000-level courses only
+    curves_df = curves_df[curves_df['Crs Num'].astype(str).str.startswith('2')]
+    
     # Process data
     curves_df['Hour'] = pd.to_datetime(curves_df['Hour'], format='%H:%M').dt.hour
     curves_df_sorted = curves_df.sort_values('Hour')
-    hourly_enrollment = curves_df_sorted.groupby('Hour')['Enr Count'].mean().reset_index()
+    hourly_enrollment = curves_df_sorted.groupby('Hour')['Enr Count'].sum().reset_index()
     
     # Filter out zero enrollment hours
     hourly_enrollment = hourly_enrollment[hourly_enrollment['Enr Count'] > 0]
+    
+    if len(hourly_enrollment) == 0:
+        print("  No 2000-level courses scheduled for this day")
+        continue
     
     # Calculate thresholds for analysis
     peak_threshold = hourly_enrollment['Enr Count'].quantile(0.75)
@@ -142,9 +152,9 @@ for day_name, csv_file in csv_files.items():
 
 print(f"\n" + "="*80)
 print("ANALYSIS SUMMARY:")
-print("  • Higher bars = More students in class (busy periods)")
-print("  • Lower bars = Fewer students in class (good for events)")
-print("  • Only active class periods are shown")
-print("  • Use this data to identify optimal event scheduling times")
-print("  • Compare across days to find the best event days")
+print("  • Higher bars = More total students in 2000-level courses (busy periods)")
+print("  • Lower bars = Fewer total students in 2000-level courses (good for events)")
+print("  • Shows total enrollment across all 2000-level courses at each hour")
+print("  • Use this data to identify optimal event scheduling times for 2000-level students")
+print("  • Compare across days to find the best event days for 2000-level students")
 print("="*80)
