@@ -234,6 +234,17 @@ def load_major_data() -> tuple[dict[str, str], dict[str, str]]:
         program_mapping = {}
         major_categories = {}
         
+        # Faculty mapping based on York University Markham structure
+        faculty_mapping = {
+            'Sport Management (BSM)': 'LAPS - Sport Management',
+            'Sport Management (BSM) — Honours': 'LAPS - Sport Management',
+            'Computer Science for Software Development (CSSD)': 'Lassonde - Computer Science for Software Development',
+            'Communication & Media Studies (CMDS)': 'LAPS - Communication, Social Media & Public Relations',
+            'Creative Technologies (CRTE)': 'AMPD - Creative Technologies',
+            'Entrepreneurship & Innovation (ENTP)': 'LAPS - Entrepreneurship & Innovation',
+            'Financial Technologies (FINT)': 'LAPS - Financial Technologies',
+        }
+        
         for _, row in df.iterrows():
             major = row['Major']
             degree = row['Degree']
@@ -246,23 +257,26 @@ def load_major_data() -> tuple[dict[str, str], dict[str, str]]:
                 else:
                     subject = course_code.split()[0]
                 
+                # Map major to faculty-based name
+                faculty_major = faculty_mapping.get(major, major)
+                
                 # Map subject to program
                 if subject not in program_mapping:
-                    program_mapping[subject] = major
+                    program_mapping[subject] = faculty_major
                 
                 # Create major categories
-                if major not in major_categories:
-                    major_categories[major] = major
+                if faculty_major not in major_categories:
+                    major_categories[faculty_major] = faculty_major
         
         # Add some common subjects that might not be in the CSV
         additional_mappings = {
-            'EECS': 'Computer Science for Software Development (CSSD)',
-            'DIGT': 'Digital Technologies',
-            'ENG': 'First Year Engineering Core',
-            'BIOL': 'First Year Science Program',
-            'CHEM': 'First Year Science Program',
-            'MATH': 'First Year Science Program',
-            'PHYS': 'First Year Science Program',
+            'EECS': 'Lassonde - Computer Science for Software Development',
+            'DIGT': 'LAPS - Digital Technologies',
+            'ENG': 'Lassonde - First Year Engineering Core',
+            'BIOL': 'Faculty of Science - First Year Science Program',
+            'CHEM': 'Faculty of Science - First Year Science Program',
+            'MATH': 'Faculty of Science - First Year Science Program',
+            'PHYS': 'Faculty of Science - First Year Science Program',
         }
         
         program_mapping.update(additional_mappings)
@@ -276,31 +290,31 @@ def load_major_data() -> tuple[dict[str, str], dict[str, str]]:
 def get_fallback_mapping() -> tuple[dict[str, str], dict[str, str]]:
     """Fallback mapping if CSV loading fails."""
     program_mapping = {
-        'CMDS': 'Communication & Media Studies (CMDS)',
-        'CSSD': 'Computer Science for Software Development (CSSD)',
-        'EECS': 'Computer Science for Software Development (CSSD)',
-        'CRTE': 'Creative Technologies (CRTE)',
-        'DIGT': 'Digital Technologies',
-        'ADMS': 'Entrepreneurship & Innovation (ENTP)',
-        'SPRT': 'Sport Management (BSM)',
-        'FINT': 'Financial Technologies (FINT)',
-        'ENG': 'First Year Engineering Core',
-        'BIOL': 'First Year Science Program',
-        'CHEM': 'First Year Science Program',
-        'MATH': 'First Year Science Program',
-        'PHYS': 'First Year Science Program',
+        'CMDS': 'LAPS - Communication, Social Media & Public Relations',
+        'CSSD': 'Lassonde - Computer Science for Software Development',
+        'EECS': 'Lassonde - Computer Science for Software Development',
+        'CRTE': 'AMPD - Creative Technologies',
+        'DIGT': 'LAPS - Digital Technologies',
+        'ADMS': 'LAPS - Entrepreneurship & Innovation',
+        'SPRT': 'LAPS - Sport Management',
+        'FINT': 'LAPS - Financial Technologies',
+        'ENG': 'Lassonde - First Year Engineering Core',
+        'BIOL': 'Faculty of Science - First Year Science Program',
+        'CHEM': 'Faculty of Science - First Year Science Program',
+        'MATH': 'Faculty of Science - First Year Science Program',
+        'PHYS': 'Faculty of Science - First Year Science Program',
     }
     
     major_categories = {
-        'Communication & Media Studies (CMDS)': 'Communication & Media Studies (CMDS)',
-        'Computer Science for Software Development (CSSD)': 'Computer Science for Software Development (CSSD)',
-        'Creative Technologies (CRTE)': 'Creative Technologies (CRTE)',
-        'Entrepreneurship & Innovation (ENTP)': 'Entrepreneurship & Innovation (ENTP)',
-        'Sport Management (BSM)': 'Sport Management (BSM)',
-        'Financial Technologies (FINT)': 'Financial Technologies (FINT)',
-        'Digital Technologies': 'Digital Technologies',
-        'First Year Engineering Core': 'First Year Engineering Core',
-        'First Year Science Program': 'First Year Science Program',
+        'LAPS - Communication, Social Media & Public Relations': 'LAPS - Communication, Social Media & Public Relations',
+        'Lassonde - Computer Science for Software Development': 'Lassonde - Computer Science for Software Development',
+        'AMPD - Creative Technologies': 'AMPD - Creative Technologies',
+        'LAPS - Entrepreneurship & Innovation': 'LAPS - Entrepreneurship & Innovation',
+        'LAPS - Sport Management': 'LAPS - Sport Management',
+        'LAPS - Financial Technologies': 'LAPS - Financial Technologies',
+        'LAPS - Digital Technologies': 'LAPS - Digital Technologies',
+        'Lassonde - First Year Engineering Core': 'Lassonde - First Year Engineering Core',
+        'Faculty of Science - First Year Science Program': 'Faculty of Science - First Year Science Program',
         'Unmapped/Other': 'Other Programs'
     }
     
