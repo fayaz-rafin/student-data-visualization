@@ -24,13 +24,30 @@ WEEKDAY_TO_FILE = {
 
 
 def read_csv_safely(file_like_or_path: Path | str) -> pd.DataFrame | None:
+    """Safely read CSV file, handling both file paths and Streamlit uploaded files."""
     try:
         if isinstance(file_like_or_path, (str, Path)):
-            return pd.read_csv(file_like_or_path)
-        return pd.read_csv(file_like_or_path)
+            # Try reading with different encodings for file paths
+            try:
+                return pd.read_csv(file_like_or_path, encoding='utf-8')
+            except UnicodeDecodeError:
+                return pd.read_csv(file_like_or_path, encoding='latin-1')
+        else:
+            # Handle Streamlit UploadedFile objects
+            # Reset file pointer to beginning in case it was read before
+            if hasattr(file_like_or_path, 'seek'):
+                file_like_or_path.seek(0)
+            # Try reading with different encodings
+            try:
+                return pd.read_csv(file_like_or_path, encoding='utf-8')
+            except UnicodeDecodeError:
+                if hasattr(file_like_or_path, 'seek'):
+                    file_like_or_path.seek(0)
+                return pd.read_csv(file_like_or_path, encoding='latin-1')
     except pd.errors.EmptyDataError:
         return pd.DataFrame()
-    except Exception:
+    except Exception as e:
+        st.error(f"Error reading CSV file: {str(e)}")
         return None
 
 
@@ -325,6 +342,20 @@ PROGRAM_BY_SUBJECT, MAJOR_CATEGORIES = load_major_data()
 
 ANCHOR_SUBJECTS = {'CMDS','CSSD','EECS','CRTE','DIGT','ADMS','SPRT','FINT'}
 
+# Define consistent colors for each major/faculty
+MAJOR_COLORS = {
+    'LAPS - Communication, Social Media & Public Relations': '#1f77b4',  # Blue
+    'Lassonde - Computer Science for Software Development': '#ff7f0e',  # Orange
+    'AMPD - Creative Technologies': '#2ca02c',  # Green
+    'LAPS - Entrepreneurship & Innovation': '#d62728',  # Red
+    'LAPS - Sport Management': '#9467bd',  # Purple
+    'LAPS - Financial Technologies': '#8c564b',  # Brown
+    'LAPS - Digital Technologies': '#e377c2',  # Pink
+    'Lassonde - First Year Engineering Core': '#7f7f7f',  # Gray
+    'Faculty of Science - First Year Science Program': '#bcbd22',  # Olive
+    'Unmapped/Other': '#17becf',  # Cyan
+}
+
 
 def compute_students_per_major(df: pd.DataFrame) -> pd.DataFrame:
     """Compute total students per major based on course enrollments."""
@@ -452,6 +483,7 @@ def filter_dataframe_by_majors(df: pd.DataFrame, selected_majors: list[str]) -> 
 
 
 def load_day_dataframe(day_name: str) -> pd.DataFrame | None:
+    """Load and process dataframe for a specific day from either sample files or uploaded files."""
     if not selected_days or day_name not in selected_days:
         return None
     if use_sample:
@@ -473,51 +505,81 @@ def load_day_dataframe(day_name: str) -> pd.DataFrame | None:
         # Apply major filter
         df = filter_dataframe_by_majors(df, selected_majors)
         return df
-    file_like = uploaded.get(day_name)
-    if file_like is None:
-        return None
-    df = read_csv_safely(file_like)
-    if df is None or df.empty:
-        st.info(f"Uploaded CSV for {day_name} is empty.")
-        return None
-    df, mapping = harmonize_columns(df)
-    if show_debug and mapping:
-        st.caption(f"Column mapping: {mapping}")
-    required = {'Hour', 'Dur.', 'Enr Count', 'Subj'}
-    if not required.issubset(df.columns):
-        missing = required.difference(df.columns)
-        st.warning(f"{day_name}: Missing columns {sorted(list(missing))}. Found: {list(df.columns)}")
-        if show_debug:
-            st.dataframe(df.head())
-        return None
-    # Apply major filter
-    df = filter_dataframe_by_majors(df, selected_majors)
-    return df
+    else:
+        # Handle uploaded files
+        file_like = uploaded.get(day_name)
+        if file_like is None:
+            return None
+        # Reset file pointer to beginning in case it was read before
+        if hasattr(file_like, 'seek'):
+            file_like.seek(0)
+        df = read_csv_safely(file_like)
+        if df is None or df.empty:
+            st.info(f"Uploaded CSV for {day_name} is empty or could not be read.")
+            return None
+        df, mapping = harmonize_columns(df)
+        if show_debug and mapping:
+            st.caption(f"Column mapping: {mapping}")
+        required = {'Hour', 'Dur.', 'Enr Count', 'Subj'}
+        if not required.issubset(df.columns):
+            missing = required.difference(df.columns)
+            st.warning(f"{day_name}: Missing columns {sorted(list(missing))}. Found: {list(df.columns)}")
+            if show_debug:
+                st.dataframe(df.head())
+            return None
+        # Apply major filter
+        df = filter_dataframe_by_majors(df, selected_majors)
+        return df
 
 
 # Add student count per major section
 st.subheader("📈 Students per Major")
 st.write("Total student enrollment by major based on course data:")
 
-# Collect data from all selected days
-all_major_data = []
+# Collect raw data from all selected days to avoid double-counting
+all_raw_data = []
 for day_name in selected_days:
     df = load_day_dataframe(day_name)
     if df is not None and not df.empty:
-        major_stats = compute_students_per_major(df)
-        if not major_stats.empty:
-            major_stats['Day'] = day_name
-            all_major_data.append(major_stats)
+        df['Day'] = day_name
+        all_raw_data.append(df)
 
-if all_major_data:
-    # Combine all days and aggregate
-    combined_major_data = pd.concat(all_major_data, ignore_index=True)
+if all_raw_data:
+    # Combine all days
+    combined_df = pd.concat(all_raw_data, ignore_index=True)
     
-    # Aggregate across all days
-    daily_totals = combined_major_data.groupby('Program', as_index=False).agg({
-        'Total Students': 'sum',
-        'Course Count': 'mean'  # Average course count across days
-    }).round(0)
+    # Create a course identifier to deduplicate courses that appear on multiple days
+    # Use Subject + Course Number if available, otherwise just Subject
+    if 'Crs Num' in combined_df.columns:
+        combined_df['Course_ID'] = combined_df['Subj'].astype(str) + '_' + combined_df['Crs Num'].astype(str)
+    else:
+        # Try to find course number column by synonyms
+        crs_num_col = _find_column_by_synonyms(combined_df, {'crsnum', 'coursenumber', 'coursecode', 'courseno'})
+        if crs_num_col:
+            combined_df['Course_ID'] = combined_df['Subj'].astype(str) + '_' + combined_df[crs_num_col].astype(str)
+        else:
+            # Fallback: use Subject + Hour + Duration as a proxy (not perfect but better than nothing)
+            combined_df['Course_ID'] = combined_df['Subj'].astype(str) + '_' + combined_df['Hour'].astype(str) + '_' + combined_df['Dur.'].astype(str)
+    
+    # Map subjects to programs
+    combined_df['Program'] = combined_df['Subj'].map(PROGRAM_BY_SUBJECT).fillna('Unmapped/Other')
+    
+    # For each course, take the maximum enrollment (to avoid counting same course multiple times across days)
+    # This assumes the same course has the same enrollment each day it meets
+    course_max_enrollment = combined_df.groupby(['Course_ID', 'Program'], as_index=False)['Enr Count'].max()
+    
+    # Now aggregate by program to get total students per major
+    daily_totals = course_max_enrollment.groupby('Program', as_index=False).agg({
+        'Enr Count': 'sum',
+        'Course_ID': 'nunique'  # Count unique courses per major
+    }).rename(columns={
+        'Enr Count': 'Total Students',
+        'Course_ID': 'Course Count'
+    })
+    
+    # Round to integers
+    daily_totals['Total Students'] = daily_totals['Total Students'].round(0).astype(int)
+    daily_totals['Course Count'] = daily_totals['Course Count'].round(0).astype(int)
     
     # Sort by total students
     daily_totals = daily_totals.sort_values('Total Students', ascending=False)
@@ -534,15 +596,21 @@ if all_major_data:
                 lambda x: MAJOR_CATEGORIES.get(x, x)[:30] + "..." if len(MAJOR_CATEGORIES.get(x, x)) > 30 else MAJOR_CATEGORIES.get(x, x)
             )
             
+            # Create color scale with consistent colors
+            color_scale = alt.Scale(
+                domain=list(MAJOR_COLORS.keys()),
+                range=list(MAJOR_COLORS.values())
+            )
+            
             c = alt.Chart(chart_data).mark_bar().encode(
                 x=alt.X('Total Students:Q', title='Total Students'),
                 y=alt.Y('Major_Short:N', sort='-x', title='Major'),
                 tooltip=[
                     alt.Tooltip('Program:N', title='Major'),
                     alt.Tooltip('Total Students:Q', title='Total Students', format='.0f'),
-                    alt.Tooltip('Course Count:Q', title='Avg Courses', format='.0f')
+                    alt.Tooltip('Course Count:Q', title='Unique Courses', format='.0f')
                 ],
-                color=alt.value('#4682B4')
+                color=alt.Color('Program:N', scale=color_scale)
             ).properties(
                 height=400,
                 title="Student Enrollment by Major"
@@ -574,7 +642,7 @@ if all_major_data:
                 column_config={
                     "Major": st.column_config.TextColumn("Major", width="medium"),
                     "Total Students": st.column_config.NumberColumn("Total Students", format="%d"),
-                    "Course Count": st.column_config.NumberColumn("Avg Courses", format="%d"),
+                    "Course Count": st.column_config.NumberColumn("Unique Courses", format="%d"),
                     "Percentage": st.column_config.NumberColumn("Percentage", format="%.1f%%")
                 }
             )
@@ -586,50 +654,6 @@ if all_major_data:
             st.info("No data available for the selected majors.")
 else:
     st.warning("No data available for the selected days and majors.")
-
-
-def load_day_dataframe(day_name: str) -> pd.DataFrame | None:
-    if not selected_days or day_name not in selected_days:
-        return None
-    if use_sample:
-        csv_path = Path(WEEKDAY_TO_FILE[day_name])
-        if not csv_path.exists():
-            return None
-        df = read_csv_safely(csv_path)
-        if df is None or df.empty:
-            st.info(f"No rows in sample CSV for {day_name}.")
-            return None
-        df, mapping = harmonize_columns(df)
-        if show_debug and mapping:
-            st.caption(f"Column mapping: {mapping}")
-        required = {'Hour', 'Dur.', 'Enr Count', 'Subj'}
-        if not required.issubset(df.columns):
-            if show_debug:
-                st.warning(f"{day_name}: Missing required columns. Found: {list(df.columns)}")
-            return None
-        # Apply major filter
-        df = filter_dataframe_by_majors(df, selected_majors)
-        return df
-    file_like = uploaded.get(day_name)
-    if file_like is None:
-        return None
-    df = read_csv_safely(file_like)
-    if df is None or df.empty:
-        st.info(f"Uploaded CSV for {day_name} is empty.")
-        return None
-    df, mapping = harmonize_columns(df)
-    if show_debug and mapping:
-        st.caption(f"Column mapping: {mapping}")
-    required = {'Hour', 'Dur.', 'Enr Count', 'Subj'}
-    if not required.issubset(df.columns):
-        missing = required.difference(df.columns)
-        st.warning(f"{day_name}: Missing columns {sorted(list(missing))}. Found: {list(df.columns)}")
-        if show_debug:
-            st.dataframe(df.head())
-        return None
-    # Apply major filter
-    df = filter_dataframe_by_majors(df, selected_majors)
-    return df
 
 
 st.subheader("1) Students Available at Class End Times (Total)")
@@ -741,10 +765,19 @@ for row_idx, day_group in enumerate(day_chunks):
                 legend_programs = legend_programs + ['Unmapped/Other']
             presence = presence.sort_values('End Hour Rounded')
             ordered_labels = [format_end_time_label(v) for v in sorted(presence['End Hour Rounded'].unique())]
+            
+            # Create color scale with consistent colors
+            color_scale = alt.Scale(
+                domain=list(MAJOR_COLORS.keys()),
+                range=list(MAJOR_COLORS.values())
+            )
+            
             c = alt.Chart(presence).mark_bar().encode(
                 x=alt.X('End Time:N', sort=ordered_labels, title='Class End Time'),
                 y=alt.Y('Students:Q', stack='zero', title='Estimated Students Present'),
-                color=alt.Color('Program:N', legend=alt.Legend(title='Program', values=legend_programs, columns=1)),
+                color=alt.Color('Program:N', 
+                              scale=color_scale,
+                              legend=alt.Legend(title='Program', values=legend_programs, columns=1)),
                 tooltip=[
                     alt.Tooltip('End Time:N', title='End Time'),
                     alt.Tooltip('Program:N', title='Program'),
