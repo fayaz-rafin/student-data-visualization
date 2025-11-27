@@ -22,22 +22,96 @@ WEEKDAY_TO_FILE = {
     'Friday': "20250818 Calendar Snapshot(FRI FY).csv",
 }
 
+# Day name mapping (single letter/code to full name)
+DAY_MAPPING = {
+    'M': 'Monday',
+    'T': 'Tuesday',
+    'W': 'Wednesday',
+    'R': 'Thursday',
+    'F': 'Friday',
+    'MON': 'Monday',
+    'TUE': 'Tuesday',
+    'TUES': 'Tuesday',
+    'WED': 'Wednesday',
+    'THU': 'Thursday',
+    'THURS': 'Thursday',
+    'FRI': 'Friday'
+}
 
-def read_csv_safely(file_like_or_path: Path | str) -> pd.DataFrame | None:
-    """Safely read CSV file, handling both file paths and Streamlit uploaded files."""
+
+def split_file_by_day(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Split a dataframe by Day column if it exists. Returns dict of day_name -> dataframe."""
+    if df is None or df.empty:
+        return {}
+    
+    # Check if Day column exists
+    day_col = None
+    for col in df.columns:
+        if col.lower() in ['day', 'days', 'weekday']:
+            day_col = col
+            break
+    
+    if day_col is None:
+        return {}
+    
+    split_data = {}
+    for day_code in df[day_col].dropna().unique():
+        day_code_str = str(day_code).strip().upper()
+        
+        # Map day code to full day name
+        day_name = None
+        if day_code_str in DAY_MAPPING:
+            day_name = DAY_MAPPING[day_code_str]
+        elif day_code_str in WEEKDAY_TO_FILE:
+            day_name = day_code_str
+        
+        if day_name and day_name in WEEKDAY_TO_FILE:
+            day_df = df[df[day_col].astype(str).str.strip().str.upper() == day_code_str].copy()
+            if not day_df.empty:
+                split_data[day_name] = day_df
+    
+    return split_data
+
+
+def read_file_safely(file_like_or_path: Path | str) -> pd.DataFrame | None:
+    """Safely read CSV or Excel file, handling both file paths and Streamlit uploaded files."""
     try:
-        if isinstance(file_like_or_path, (str, Path)):
-            # Try reading with different encodings for file paths
-            try:
-                return pd.read_csv(file_like_or_path, encoding='utf-8')
-            except UnicodeDecodeError:
-                return pd.read_csv(file_like_or_path, encoding='latin-1')
+        is_path = isinstance(file_like_or_path, (str, Path))
+        
+        # Determine file type
+        if is_path:
+            file_path = Path(file_like_or_path)
+            file_ext = file_path.suffix.lower()
+            file_name = str(file_path)
         else:
-            # Handle Streamlit UploadedFile objects
-            # Reset file pointer to beginning in case it was read before
+            # Streamlit UploadedFile object
+            file_name = file_like_or_path.name if hasattr(file_like_or_path, 'name') else ''
+            file_ext = Path(file_name).suffix.lower() if file_name else ''
+            # Reset file pointer
             if hasattr(file_like_or_path, 'seek'):
                 file_like_or_path.seek(0)
-            # Try reading with different encodings
+        
+        # Read Excel files
+        if file_ext in ['.xlsx', '.xls', '.xlsm']:
+            try:
+                if is_path:
+                    return pd.read_excel(file_path, engine='openpyxl' if file_ext == '.xlsx' else None)
+                else:
+                    return pd.read_excel(file_like_or_path, engine='openpyxl' if file_ext == '.xlsx' else None)
+            except ImportError:
+                st.error("Excel file support requires 'openpyxl' package. Please install it with: pip install openpyxl")
+                return None
+            except Exception as e:
+                st.error(f"Error reading Excel file: {str(e)}")
+                return None
+        
+        # Read CSV files
+        if is_path:
+            try:
+                return pd.read_csv(file_path, encoding='utf-8')
+            except UnicodeDecodeError:
+                return pd.read_csv(file_path, encoding='latin-1')
+        else:
             try:
                 return pd.read_csv(file_like_or_path, encoding='utf-8')
             except UnicodeDecodeError:
@@ -47,7 +121,7 @@ def read_csv_safely(file_like_or_path: Path | str) -> pd.DataFrame | None:
     except pd.errors.EmptyDataError:
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"Error reading CSV file: {str(e)}")
+        st.error(f"Error reading file: {str(e)}")
         return None
 
 
@@ -498,12 +572,55 @@ st.caption("Interactive exploration of student availability by hour and by subje
 
 with st.sidebar:
     st.header("Data Sources")
-    st.write("Upload CSVs per weekday or use the sample files present in the repo.")
-    use_sample = st.toggle("Use sample CSVs from repository", value=True)
+    st.write("Upload files per weekday or use the sample files present in the repo.")
+    use_sample = st.toggle("Use sample CSVs from repository", value=False)
     uploaded = {}
+    single_file_uploaded = None
+    single_file_split = {}
+    
+    # Default: Try to load Winter 26 Class Schedule if it exists
+    winter_file_path = Path("Winter 26 Class Schedule(ALL).csv")
+    if not use_sample and winter_file_path.exists():
+        try:
+            df_winter = read_file_safely(winter_file_path)
+            if df_winter is not None and not df_winter.empty:
+                single_file_split = split_file_by_day(df_winter)
+                if single_file_split:
+                    st.info(f"📅 **Winter 26 data loaded automatically** ({len(single_file_split)} day(s): {', '.join(single_file_split.keys())})")
+        except Exception:
+            # Silently fail - user can upload manually if needed
+            pass
+    
     if not use_sample:
+        # Option 1: Single file upload (Excel or CSV with Day column)
+        st.subheader("Option 1: Upload Single File (All Days)")
+        single_file_uploaded = st.file_uploader(
+            "Upload file with all days (CSV or Excel)", 
+            type=["csv", "xlsx", "xls"],
+            key="single_file_uploader",
+            help="Upload a single file containing data for all days. The app will automatically split it by the 'Day' column."
+        )
+        
+        if single_file_uploaded:
+            df_all = read_file_safely(single_file_uploaded)
+            if df_all is not None and not df_all.empty:
+                single_file_split = split_file_by_day(df_all)
+                if single_file_split:
+                    st.success(f"✅ File loaded and split into {len(single_file_split)} day(s): {', '.join(single_file_split.keys())}")
+                else:
+                    st.warning("⚠️ File loaded but no 'Day' column found. Please upload per-day files instead.")
+        
+        st.divider()
+        
+        # Option 2: Per-day file uploads
+        st.subheader("Option 2: Upload Files Per Day")
         for day in WEEKDAY_TO_FILE.keys():
-            uploaded[day] = st.file_uploader(f"Upload {day} CSV", type=["csv"], key=f"uploader_{day}")
+            uploaded[day] = st.file_uploader(
+                f"Upload {day} file", 
+                type=["csv", "xlsx", "xls"], 
+                key=f"uploader_{day}",
+                help=f"Upload a file containing data for {day} only"
+            )
     st.divider()
     st.header("Major Filter")
     st.write("Filter data by specific majors based on degree checklists:")
@@ -553,7 +670,7 @@ def load_day_dataframe(day_name: str) -> pd.DataFrame | None:
         csv_path = Path(WEEKDAY_TO_FILE[day_name])
         if not csv_path.exists():
             return None
-        df = read_csv_safely(csv_path)
+        df = read_file_safely(csv_path)
         if df is None or df.empty:
             st.info(f"No rows in sample CSV for {day_name}.")
             return None
@@ -569,17 +686,22 @@ def load_day_dataframe(day_name: str) -> pd.DataFrame | None:
         df = filter_dataframe_by_majors(df, selected_majors)
         return df
     else:
-        # Handle uploaded files
-        file_like = uploaded.get(day_name)
-        if file_like is None:
-            return None
-        # Reset file pointer to beginning in case it was read before
-        if hasattr(file_like, 'seek'):
-            file_like.seek(0)
-        df = read_csv_safely(file_like)
-        if df is None or df.empty:
-            st.info(f"Uploaded CSV for {day_name} is empty or could not be read.")
-            return None
+        # First check if we have a single file that was split by day
+        if single_file_split and day_name in single_file_split:
+            df = single_file_split[day_name].copy()
+        else:
+            # Handle per-day uploaded files
+            file_like = uploaded.get(day_name)
+            if file_like is None:
+                return None
+            # Reset file pointer to beginning in case it was read before
+            if hasattr(file_like, 'seek'):
+                file_like.seek(0)
+            df = read_file_safely(file_like)
+            if df is None or df.empty:
+                return None
+        
+        # Process the dataframe
         df, mapping = harmonize_columns(df)
         if show_debug and mapping:
             st.caption(f"Column mapping: {mapping}")
@@ -855,7 +977,13 @@ if not program_any:
 
 st.divider()
 st.markdown(
-    "Note: Expected CSV columns include `Hour` (e.g., 13:30), `Dur.` (minutes), `Enr Count`, and `Subj`."
+    """
+    **Note:** 
+    - Supported file formats: CSV, Excel (.xlsx, .xls)
+    - Expected columns: `Hour` (e.g., 13:30), `Dur.` (minutes), `Enr Count`, and `Subj`
+    - For single-file uploads: Include a `Day` column (M, T, W, R, F) to automatically split data by weekday
+    - The app will automatically detect and map day codes (M=Monday, T=Tuesday, W=Wednesday, R=Thursday, F=Friday)
+    """
 )
 
 
