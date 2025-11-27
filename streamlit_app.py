@@ -180,6 +180,61 @@ def plot_stacked_subjects(ax, pivot: pd.DataFrame, title: str) -> None:
     ax.legend(bbox_to_anchor=(1.02, 1.0), loc='upper left', fontsize=8, ncol=2, frameon=True, fancybox=True)
 
 
+def _deduplicate_course_groups(df: pd.DataFrame) -> pd.DataFrame:
+    """Deduplicate courses that represent the same students (e.g., CSSD 2103-2106).
+    
+    CSSD 2103, 2104, 2105, and 2106 are the same 74 students split across different weeks.
+    When calculating totals at class end times, we should only count them once per end time.
+    """
+    if df is None or df.empty:
+        return df
+    
+    d = df.copy()
+    
+    # Get course number column if it exists
+    crs_num_col = 'Crs Num' if 'Crs Num' in d.columns else _find_column_by_synonyms(d, {'crsnum', 'coursenumber', 'coursecode', 'courseno'})
+    
+    if crs_num_col is None or 'End Hour Rounded' not in d.columns:
+        # Can't deduplicate without course numbers or end times
+        return d
+    
+    # Identify CSSD 2103-2106 courses (same students, different weeks)
+    is_cssd_210x = (d['Subj'] == 'CSSD') & (d[crs_num_col].astype(str).isin(['2103', '2104', '2105', '2106']))
+    
+    if not is_cssd_210x.any():
+        # No CSSD 210X courses to deduplicate
+        return d
+    
+    # For CSSD 210X courses at each end time, take the maximum enrollment
+    # (since they're the same students, we should only count them once per end time)
+    cssd_210x_data = d[is_cssd_210x].copy()
+    other_data = d[~is_cssd_210x].copy()
+    
+    # Group CSSD 210X by end time and take max enrollment
+    cssd_deduplicated = cssd_210x_data.groupby('End Hour Rounded', as_index=False)['Enr Count'].max()
+    
+    # Create a single row per end time for CSSD 210X with the max enrollment
+    # We'll create a simplified row with just the essential columns
+    if not cssd_deduplicated.empty and not cssd_210x_data.empty:
+        cssd_deduplicated_rows = []
+        first_cssd_row = cssd_210x_data.iloc[0]
+        
+        for _, dedup_row in cssd_deduplicated.iterrows():
+            new_row = first_cssd_row.copy()
+            new_row['End Hour Rounded'] = dedup_row['End Hour Rounded']
+            new_row['Enr Count'] = dedup_row['Enr Count']
+            if crs_num_col:
+                new_row[crs_num_col] = '2103-2106'  # Mark as grouped
+            cssd_deduplicated_rows.append(new_row)
+        
+        cssd_deduplicated_df = pd.DataFrame(cssd_deduplicated_rows)
+        
+        # Combine with other data
+        d = pd.concat([other_data, cssd_deduplicated_df], ignore_index=True)
+    
+    return d
+
+
 # New helpers to show totals and course-level breakdowns based on end times
 def compute_endtime_totals(df: pd.DataFrame) -> pd.DataFrame:
     required = {'Hour', 'Dur.', 'Enr Count'}
@@ -190,6 +245,10 @@ def compute_endtime_totals(df: pd.DataFrame) -> pd.DataFrame:
     d['Duration'] = d['Dur.'].astype(float) / 60.0
     d['End Hour'] = d['Hour'] + d['Duration']
     d['End Hour Rounded'] = (d['End Hour'] * 2).round() / 2
+    
+    # Deduplicate course groups before summing
+    d = _deduplicate_course_groups(d)
+    
     totals = (
         d.groupby('End Hour Rounded', as_index=False)['Enr Count']
          .sum()
@@ -218,6 +277,10 @@ def compute_endtime_course_pivot(df: pd.DataFrame) -> pd.DataFrame:
     d['Duration'] = d['Dur.'].astype(float) / 60.0
     d['End Hour'] = d['Hour'] + d['Duration']
     d['End Hour Rounded'] = (d['End Hour'] * 2).round() / 2
+    
+    # Deduplicate course groups before creating pivot
+    d = _deduplicate_course_groups(d)
+    
     subj_col = 'Subj'
     crs_num_col = _find_column_by_synonyms(d, {'crsnum', 'coursenumber', 'coursecode', 'courseno'}) or ('Crs Num' if 'Crs Num' in d.columns else None)
     title_col = _find_column_by_synonyms(d, {'coursetitle', 'title'}) or ('Course Title' if 'Course Title' in d.columns else None)
@@ -330,7 +393,7 @@ def get_fallback_mapping() -> tuple[dict[str, str], dict[str, str]]:
         'LAPS - Sport Management': 'LAPS - Sport Management',
         'LAPS - Financial Technologies': 'LAPS - Financial Technologies',
         'LAPS - Digital Technologies': 'LAPS - Digital Technologies',
-        'Lassonde - First Year Engineering Core': 'Lassonde - First Year Engineering Core',
+        'Lassonde - First Year Engineering Core': 'Lassonde - First Year Enineering Core',
         'Faculty of Science - First Year Science Program': 'Faculty of Science - First Year Science Program',
         'Unmapped/Other': 'Other Programs'
     }
